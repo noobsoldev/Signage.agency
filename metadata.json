@@ -1,5 +1,5 @@
 {
-  "name": "Signage.agency",
-  "description": "Signage price estimation tool with live Google Sheets integration and PDF proposal generation.",
+  "name": "UAMS Designs’s Price Estimator",
+  "description": "Professional price estimation tool for UAMS Design Pvt. Ltd., specializing in UV printing, signage, and branding solutions.",
   "requestFramePermissions": []
 }
