@@ -462,6 +462,10 @@
             state.step = 2;
             const selectedType = state.selections.printType;
             
+            if (!availableTypes) {
+                availableTypes = getAvailablePrintTypes(state.selections.product);
+            }
+            
             render(`
                 ${renderStepHeader(2, 4)}
                 <h2 class="text-2xl font-bold text-slate-900 mb-6">Select Print Type</h2>
@@ -531,7 +535,19 @@
         function renderPrintingStep3() {
             state.step = 3;
             const pObj = state.data.printing.find(p => p.product === state.selections.product);
-            const unit = pObj.rateSqinch && !pObj.rateSqft.length ? 'sqinch' : 'sqft';
+            
+            // Products that specifically use sq inch as per user request
+            const sqInchProducts = [
+                'ss plate 202',
+                'ss plate 304',
+                'golden ss plate',
+                'studs',
+                'glow sign board tubelight',
+                'glow sign board led'
+            ];
+            
+            const currentProduct = state.selections.product.toLowerCase().trim();
+            const unit = sqInchProducts.some(p => currentProduct.includes(p)) ? 'sqinch' : (pObj.rateSqinch && !pObj.rateSqft.length ? 'sqinch' : 'sqft');
             state.selections.unit = unit;
 
             render(`
@@ -540,13 +556,13 @@
                 <div class="space-y-6">
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Width (Feet)</label>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Width (${unit === 'sqinch' ? 'Inches' : 'Feet'})</label>
                             <div class="relative">
                                 <input type="number" id="width-input" value="${state.selections.width || ''}" placeholder="0" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xl font-bold text-slate-800 transition-all">
                             </div>
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Height (Feet)</label>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Height (${unit === 'sqinch' ? 'Inches' : 'Feet'})</label>
                             <div class="relative">
                                 <input type="number" id="height-input" value="${state.selections.height || ''}" placeholder="0" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xl font-bold text-slate-800 transition-all">
                             </div>
@@ -580,13 +596,8 @@
             state.selections.width = width;
             state.selections.height = height;
 
-            const areaSqFt = width * height;
-            let size = areaSqFt;
-            
-            if (state.selections.unit === 'sqinch') {
-                size = areaSqFt * 144;
-            }
-            
+            // Calculation: width * height gives the area in the current unit (sqft or sqinch)
+            const size = width * height;
             state.selections.size = size;
 
             const pObj = state.data.printing.find(p => p.product === state.selections.product);
