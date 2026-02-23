@@ -97,7 +97,19 @@
         </div>
 
         <!-- Main Card -->
-        <div id="main-card" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 min-h-[400px] flex flex-col">
+        <div id="main-card" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 min-h-[400px] flex flex-col relative">
+            <!-- Live Data Badge -->
+            <div class="absolute top-4 right-4 flex items-center space-x-2">
+                <div class="flex items-center space-x-1.5 px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-full">
+                    <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                    <span class="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Live Sync</span>
+                </div>
+                <button onclick="init()" class="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm group" title="Sync with Google Sheets">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-slate-400 group-hover:text-blue-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                </button>
+            </div>
             <!-- Content will be injected here -->
             <div id="content" class="fade-in flex-grow">
                 <div class="flex flex-col items-center justify-center h-full py-12">
@@ -207,7 +219,9 @@
 
         // CSV Fetching
         async function fetchCSV(url) {
-            const response = await fetch(url);
+            // Add cache busting
+            const cacheBuster = `&t=${Date.now()}`;
+            const response = await fetch(url + cacheBuster);
             if (!response.ok) throw new Error('Network response was not ok');
             const text = await response.text();
             return parseCSV(text);
