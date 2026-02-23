@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signage.agency - Price Estimator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .step-transition {
+            transition: all 0.3s ease-in-out;
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 240px;
+            background-color: #0f172a;
+            color: #fff;
+            text-align: center;
+            border-radius: 10px;
+            padding: 12px;
+            position: absolute;
+            z-index: 100;
+            bottom: 140%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 12px;
+            font-weight: 400;
+            line-height: 1.5;
+            pointer-events: none;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 6px;
+            border-style: solid;
+            border-color: #0f172a transparent transparent transparent;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+            bottom: 150%;
+        }
+
+        /* Adjust tooltip for right-aligned icons to prevent clipping */
+        .dropdown-option .tooltip .tooltiptext {
+            left: auto;
+            right: -10px;
+            transform: none;
+        }
+        .dropdown-option .tooltip .tooltiptext::after {
+            left: auto;
+            right: 14px;
+            transform: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-12 px-4">
+
+    <div id="app" class="w-full max-w-[780px]">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Signage.agency</h1>
+            <p class="text-slate-500 mt-2">Professional Signage Price Estimation Tool</p>
+        </div>
+
+        <!-- Main Card -->
+        <div id="main-card" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 min-h-[400px] flex flex-col">
+            <!-- Content will be injected here -->
+            <div id="content" class="fade-in flex-grow">
+                <div class="flex flex-col items-center justify-center h-full py-12">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    <p class="mt-4 text-slate-600">Loading pricing data...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <p class="text-center text-slate-400 text-sm mt-8">
+            &copy; 2026 Signage.agency. All prices are estimates.
+        </p>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+
+        // Configuration
+        const SHEET1_URL = 'https://docs.google.com/spreadsheets/d/14q8IyY1DcUaRINaBBj8_jckql3qB5Cf_ADFugMBtgXI/gviz/tq?tqx=out:csv&sheet=Price%20List';
+        const SHEET2_URL = 'https://docs.google.com/spreadsheets/d/1q0grb-AKIcdz8mTz0lwW6NnCGMKvYB40KLeCV0vybhg/gviz/tq?tqx=out:csv';
+
+        // State
+        let state = {
+            mode: 'home', // 'home', 'printing', 'channel'
+            step: 1,
+            data: {
+                printing: [],
+                channel: []
+            },
+            selections: {},
+            result: null
+        };
+
+        // UI Elements
+        const contentEl = document.getElementById('content');
+
+        // Initialization
+        const PRINT_TYPE_INFO = {
+            'Solvent': 'High-durability, weather-resistant printing using solvent-based inks. Ideal for outdoor banners and vehicle wraps.',
+            'Eco Solvent': 'A more environmentally friendly version of solvent printing with lower VOCs. Great for indoor/outdoor signage.',
+            'Latex': 'Water-based, odorless inks that are scratch-resistant and highly flexible. Perfect for wall coverings and banners.',
+            'UV': 'Inks are cured instantly by UV light, allowing for printing on a wide variety of rigid and flexible substrates with high detail.'
+        };
+
+        async function init() {
+            try {
+                const [pData, cData] = await Promise.all([
+                    fetchCSV(SHEET1_URL),
+                    fetchCSV(SHEET2_URL)
+                ]);
+
+                state.data.printing = parsePrintingData(pData);
+                state.data.channel = parseChannelData(cData);
+
+                renderHome();
+            } catch (error) {
+                console.error(error);
+                renderError("Unable to load pricing data. Please try again.");
+            }
+        }
+
+        // CSV Fetching
+        async function fetchCSV(url) {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Network response was not ok');
+            const text = await response.text();
+            return parseCSV(text);
+        }
+
+        function parseCSV(text) {
+            const rows = [];
+            let currentRow = [];
+            let currentField = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+
+                if (inQuotes) {
+                    if (char === '"' && nextChar === '"') {
+                        currentField += '"';
+                        i++;
+                    } else if (char === '"') {
+                        inQuotes = false;
+                    } else {
+                        currentField += char;
+                    }
+                } else {
+                    if (char === '"') {
+                        inQuotes = true;
+                    } else if (char === ',') {
+                        currentRow.push(currentField);
+                        currentField = '';
+                    } else if (char === '\n' || char === '\r') {
+                        if (char === '\r' && nextChar === '\n') i++;
+                        currentRow.push(currentField);
+                        rows.push(currentRow);
+                        currentRow = [];
+                        currentField = '';
+                    } else {
+                        currentField += char;
+                    }
+                }
+            }
+            if (currentRow.length > 0 || currentField !== '') {
+                currentRow.push(currentField);
+                rows.push(currentRow);
+            }
+            return rows;
+        }
+
+        // Data Parsing
+        function parsePrintingData(rows) {
+            // Skip header
+            return rows.slice(1).map(row => {
+                const rates = row[5] ? row[5].split('/').map(r => parseFloat(r.trim())) : [];
+                return {
+                    product: row[0],
+                    solvent: row[1] === 'YES',
+                    ecoSolvent: row[2] === 'YES',
+                    latex: row[3] === 'YES',
+                    uv: row[4] === 'YES',
+                    rateSqft: rates,
+                    rateSqinch: row[6] ? parseFloat(row[6]) : null
+                };
+            }).filter(p => p.product);
+        }
+
+        function parseChannelData(rows) {
+            const data = [];
+            let lastValues = {
+                sNo: '',
+                sizeBand: '',
+                color: '',
+                height: '',
+                thickness: '',
+                backAluminum: '',
+                trimCap: ''
+            };
+
+            // Skip header
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || row.length < 8) continue;
+
+                // Forward-fill logic for merged cells
+                const item = {
+                    sNo: row[0] || lastValues.sNo,
+                    sizeBand: row[1] || lastValues.sizeBand,
+                    color: row[2] || lastValues.color,
+                    height: row[3] || lastValues.height,
+                    thickness: row[4] || lastValues.thickness,
+                    backAluminum: row[5] || lastValues.backAluminum,
+                    trimCap: row[6] || lastValues.trimCap,
+                    price: row[7]
+                };
+
+                // Update last values
+                if (row[0]) lastValues.sNo = row[0];
+                if (row[1]) lastValues.sizeBand = row[1];
+                if (row[2]) lastValues.color = row[2];
+                if (row[3]) lastValues.height = row[3];
+                if (row[4]) lastValues.thickness = row[4];
+                if (row[5]) lastValues.backAluminum = row[5];
+                if (row[6]) lastValues.trimCap = row[6];
+
+                if (item.price) {
+                    // Clean up price and other fields
+                    item.price = item.price.toString().trim();
+                    item.color = item.color.toString().trim();
+                    // Handle common typos in sheet
+                    if (item.color === 'Brushe Silver') item.color = 'Brushed Silver';
+                    
+                    data.push(item);
+                }
+            }
+            return data;
+        }
+
+        // Rendering Logic
+        function render(html) {
+            contentEl.innerHTML = html;
+        }
+
+        function renderError(msg) {
+            render(`
+                <div class="flex flex-col items-center justify-center h-full py-12 text-center">
+                    <div class="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100 mb-6">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <p class="font-medium">${msg}</p>
+                    </div>
+                    <button onclick="location.reload()" class="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors">
+                        Try Again
+                    </button>
+                </div>
+            `);
+        }
+
+        function renderStepHeader(current, total) {
+            return `
+                <div class="mb-8">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Step ${current} of ${total}</span>
+                        <button onclick="goBack()" class="text-xs font-medium text-blue-600 hover:text-blue-700">Back</button>
+                    </div>
+                    <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div class="bg-blue-600 h-full transition-all duration-500" style="width: ${(current/total)*100}%"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderHome() {
+            state.mode = 'home';
+            state.step = 1;
+            state.selections = {};
+            state.result = null;
+
+            render(`
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+                    <div onclick="startFlow('printing')" class="group cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-8 hover:border-blue-500 hover:bg-blue-50 transition-all duration-300">
+                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-bold text-slate-900 mb-2">Printing</h3>
+                        <p class="text-slate-500 text-sm leading-relaxed">Flex, Vinyl, Acrylic, Sunboard, and more with various print types.</p>
+                    </div>
+                    <div onclick="startFlow('channel')" class="group cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-8 hover:border-blue-500 hover:bg-blue-50 transition-all duration-300">
+                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-bold text-slate-900 mb-2">Channel Letters</h3>
+                        <p class="text-slate-500 text-sm leading-relaxed">Custom aluminum letters with acrylic faces and various specifications.</p>
+                    </div>
+                </div>
+            `);
+        }
+
+        // Flow Management
+        function startFlow(mode) {
+            state.mode = mode;
+            state.step = 1;
+            if (mode === 'printing') {
+                renderPrintingStep1();
+            } else {
+                renderChannelStep1();
+            }
+        }
+
+        function goBack() {
+            if (state.step === 1) {
+                renderHome();
+            } else {
+                state.step--;
+                if (state.mode === 'printing') {
+                    if (state.step === 1) renderPrintingStep1();
+                    else if (state.step === 2) renderPrintingStep2();
+                    else if (state.step === 3) renderPrintingStep3();
+                } else {
+                    if (state.step === 1) renderChannelStep1();
+                    else if (state.step === 2) renderChannelStep1b();
+                    else if (state.step === 3) renderChannelStep2();
+                }
+            }
+        }
+
+        // --- PRINTING FLOW ---
+
+        function renderPrintingStep1() {
+            state.step = 1;
+            const products = state.data.printing.map(p => p.product);
+            
+            render(`
+                ${renderStepHeader(1, 4)}
+                <h2 class="text-2xl font-bold text-slate-900 mb-6">Select Product</h2>
+                <div class="space-y-4">
+                    <select id="product-select" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all">
+                        <option value="">Choose a product...</option>
+                        ${products.map(p => `<option value="${p}" ${state.selections.product === p ? 'selected' : ''}>${p}</option>`).join('')}
+                    </select>
+                    <button onclick="nextPrintingStep1()" class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
+                        Next
+                    </button>
+                </div>
+            `);
+        }
+
+        function nextPrintingStep1() {
+            const product = document.getElementById('product-select').value;
+            if (!product) return;
+            state.selections.product = product;
+            
+            const pObj = state.data.printing.find(p => p.product === product);
+            const availableTypes = [];
+            if (pObj.solvent) availableTypes.push('Solvent');
+            if (pObj.ecoSolvent) availableTypes.push('Eco Solvent');
+            if (pObj.latex) availableTypes.push('Latex');
+            if (pObj.uv) availableTypes.push('UV');
+
+            if (availableTypes.length > 0) {
+                renderPrintingStep2(availableTypes);
+            } else {
+                state.selections.printType = null;
+                renderPrintingStep3();
+            }
+        }
+
+        function renderPrintingStep2(availableTypes) {
+            state.step = 2;
+            const selectedType = state.selections.printType;
+            
+            render(`
+                ${renderStepHeader(2, 4)}
+                <h2 class="text-2xl font-bold text-slate-900 mb-6">Select Print Type</h2>
+                
+                <div class="relative mb-6">
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Print Type</label>
+                    <div id="print-type-dropdown" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer flex justify-between items-center hover:border-blue-300 transition-all" onclick="toggleCustomDropdown()">
+                        <div class="flex items-center">
+                            <span class="${selectedType ? 'text-slate-900 font-medium' : 'text-slate-400'}">${selectedType || 'Choose a print type...'}</span>
+                            ${selectedType ? `
+                                <div class="tooltip ml-2" onclick="event.stopPropagation()">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span class="tooltiptext">${PRINT_TYPE_INFO[selectedType]}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+                    
+                    <div id="dropdown-options" class="hidden absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden fade-in">
+                        ${availableTypes.map(type => `
+                            <div onclick="selectPrintType('${type}')" class="p-4 hover:bg-blue-50 flex flex-col group transition-colors border-b border-slate-50 last:border-0 dropdown-option">
+                                <div class="flex items-center mb-1">
+                                    <div class="w-4 h-4 rounded-full border-2 ${selectedType === type ? 'border-blue-600 bg-blue-600' : 'border-slate-300'} mr-3 flex items-center justify-center shrink-0">
+                                        ${selectedType === type ? '<div class="w-1.5 h-1.5 bg-white rounded-full"></div>' : ''}
+                                    </div>
+                                    <span class="font-bold ${selectedType === type ? 'text-blue-600' : 'text-slate-700'}">${type}</span>
+                                </div>
+                                <div class="pl-7 text-xs text-slate-500 leading-relaxed">
+                                    ${PRINT_TYPE_INFO[type] || ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <button onclick="renderPrintingStep3()" ${!selectedType ? 'disabled' : ''} class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors mt-4 shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed">
+                    Next
+                </button>
+            `);
+        }
+
+        function toggleCustomDropdown() {
+            const options = document.getElementById('dropdown-options');
+            options.classList.toggle('hidden');
+        }
+
+        function selectPrintType(type) {
+            state.selections.printType = type;
+            renderPrintingStep2(getAvailablePrintTypes(state.selections.product));
+        }
+
+        function getAvailablePrintTypes(productName) {
+            const pObj = state.data.printing.find(p => p.product === productName);
+            const types = [];
+            if (pObj.solvent) types.push('Solvent');
+            if (pObj.ecoSolvent) types.push('Eco Solvent');
+            if (pObj.latex) types.push('Latex');
+            if (pObj.uv) types.push('UV');
+            return types;
+        }
+
+        function renderPrintingStep3() {
+            state.step = 3;
+            const pObj = state.data.printing.find(p => p.product === state.selections.product);
+            const unit = pObj.rateSqinch && !pObj.rateSqft.length ? 'sqinch' : 'sqft';
+            state.selections.unit = unit;
+
+            render(`
+                ${renderStepHeader(3, 4)}
+                <h2 class="text-2xl font-bold text-slate-900 mb-6">Enter Dimensions</h2>
+                <div class="space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Width (Feet)</label>
+                            <div class="relative">
+                                <input type="number" id="width-input" value="${state.selections.width || ''}" placeholder="0" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xl font-bold text-slate-800 transition-all">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Height (Feet)</label>
+                            <div class="relative">
+                                <input type="number" id="height-input" value="${state.selections.height || ''}" placeholder="0" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xl font-bold text-slate-800 transition-all">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <p class="text-xs text-blue-600 font-medium leading-relaxed">
+                            Total area will be calculated automatically. <br>
+                            Current pricing unit: <span class="font-bold uppercase">${unit}</span>
+                        </p>
+                    </div>
+
+                    <button onclick="calculatePrinting()" class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
+                        Calculate
+                    </button>
+                </div>
+            `);
+        }
+
+        function calculatePrinting() {
+            const width = parseFloat(document.getElementById('width-input').value);
+            const height = parseFloat(document.getElementById('height-input').value);
+            
+            if (!width || width <= 0 || !height || height <= 0) {
+                if (!width || width <= 0) document.getElementById('width-input').classList.add('border-red-500');
+                if (!height || height <= 0) document.getElementById('height-input').classList.add('border-red-500');
+                return;
+            }
+
+            state.selections.width = width;
+            state.selections.height = height;
+
+            const areaSqFt = width * height;
+            let size = areaSqFt;
+            
+            if (state.selections.unit === 'sqinch') {
+                size = areaSqFt * 144;
+            }
+            
+            state.selections.size = size;
+
+            const pObj = state.data.printing.find(p => p.product === state.selections.product);
+            let rate = 0;
+
+            if (state.selections.unit === 'sqinch') {
+                rate = pObj.rateSqinch;
+            } else {
+                const typeIndex = ['Solvent', 'Eco Solvent', 'Latex', 'UV'].indexOf(state.selections.printType);
+                rate = pObj.rateSqft[typeIndex] || pObj.rateSqft[0] || 0;
+            }
+
+            state.result = {
+                rate,
+                total: rate * size
+            };
+
+            renderResult();
+        }
+
+        // --- CHANNEL LETTERS FLOW ---
+
+        function renderChannelStep1() {
+            state.step = 1;
+            render(`
+                ${renderStepHeader(1, 4)}
+                <h2 class="text-2xl font-bold text-slate-900 mb-6">Number of Letters</h2>
+                <div class="space-y-4">
+                    <div class="relative">
+                        <input type="number" id="letter-qty-input" value="${state.selections.quantity || ''}" placeholder="1" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-2xl font-bold text-slate-800 transition-all">
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium uppercase tracking-wider">Qty</div>
+                    </div>
+                    <p class="text-sm text-slate-500">Enter the total number of letters.</p>
+                    <button onclick="nextChannelStep1()" class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
+                        Next
+                    </button>
+                </div>
+            `);
+        }
+
+        function nextChannelStep1() {
+            const qty = parseInt(document.getElementById('letter-qty-input').value);
+            if (!qty || qty <= 0) return;
+            state.selections.quantity = qty;
+            renderChannelStep1b();
+        }
+
+        function renderChannelStep1b() {
+            state.step = 2;
+            render(`
+                ${renderStepHeader(2, 4)}
+                <h2 class="text-2xl font-bold text-slate-900 mb-6">Enter Letter Size</h2>
+                <div class="space-y-4">
+                    <div class="relative">
+                        <input type="number" id="letter-size-input" value="${state.selections.letterSize || ''}" placeholder="0" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-2xl font-bold text-slate-800 transition-all">
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium uppercase tracking-wider">Inches</div>
+                    </div>
+                    <p class="text-sm text-slate-500">Enter the height of the letters in inches. <br><span class="text-blue-600 font-semibold">Min size required is 12 inches.</span></p>
+                    <button onclick="nextChannelStep1b()" class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
+                        Next
+                    </button>
+                </div>
+            `);
+        }
+
+        function nextChannelStep1b() {
+            const size = parseFloat(document.getElementById('letter-size-input').value);
+            if (!size || size < 12) {
+                const input = document.getElementById('letter-size-input');
+                input.classList.add('border-red-500');
+                return;
+            }
+            state.selections.letterSize = size;
+
+            // Map to size band
+            const band = findSizeBand(size);
+            if (!band) {
+                renderError("Size is outside the supported range.");
+                return;
+            }
+            state.selections.sizeBand = band;
+            renderChannelStep2();
+        }
+
+        function findSizeBand(size) {
+            const bands = [...new Set(state.data.channel.map(d => d.sizeBand))];
+            
+            for (const band of bands) {
+                if (band.includes('above')) {
+                    const min = parseInt(band);
+                    if (size >= min) return band;
+                } else {
+                    const parts = band.match(/\d+/g);
+                    if (parts && parts.length === 2) {
+                        const min = parseInt(parts[0]);
+                        const max = parseInt(parts[1]);
+                        if (size >= min && size <= max) return band;
+                    }
+                }
+            }
+            return null;
+        }
+
+        function renderChannelStep2() {
+            state.step = 3;
+            
+            // Filter data by current selections to get available options for next dropdowns
+            let filtered = state.data.channel.filter(d => d.sizeBand === state.selections.sizeBand);
+            
+            // 1. Color
+            const colors = [...new Set(filtered.map(d => d.color))].filter(Boolean);
+            
+            // 2. Height (Manual Input now, but we still need to know available heights for matching later)
+            // We'll just use the manual input value from state.selections.height
+            
+            // 3. Thickness
+            // Since height is manual, we can't easily filter thicknesses by height until a height is entered.
+            // However, to keep the flow smooth, we might want to show all thicknesses available for the color.
+            const filteredByColor = state.selections.color ? filtered.filter(d => d.color === state.selections.color) : filtered;
+            const thicknesses = [...new Set(filteredByColor.map(d => d.thickness))].filter(Boolean);
+            
+            // 4. Back Aluminum
+            const filteredByThickness = state.selections.thickness ? filteredByColor.filter(d => d.thickness === state.selections.thickness) : filteredByColor;
+            const backAlums = [...new Set(filteredByThickness.map(d => d.backAluminum || 'None'))].filter(Boolean);
+            
+            // 5. Trim Cap
+            const filteredByBack = state.selections.backAluminum !== undefined ? 
+                filteredByThickness.filter(d => (state.selections.backAluminum === 'None' ? !d.backAluminum : d.backAluminum === state.selections.backAluminum)) : filteredByThickness;
+            const trimCaps = [...new Set(filteredByBack.map(d => d.trimCap || 'None'))].filter(Boolean);
+
+            const isComplete = state.selections.color && state.selections.height && 
+                             (thicknesses.length === 0 || state.selections.thickness) && 
+                             (backAlums.length === 0 || state.selections.backAluminum) && 
+                             (state.selections.letterSize <= 90 || trimCaps.length === 0 || state.selections.trimCap);
+
+            render(`
+                ${renderStepHeader(3, 4)}
+                <h2 class="text-2xl font-bold text-slate-900 mb-6">Select Specifications</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Color of Aluminum</label>
+                        <select onchange="updateChannelSelection('color', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Select Color...</option>
+                            ${colors.map(c => `<option value="${c}" ${state.selections.color === c ? 'selected' : ''}>${c}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    ${state.selections.color ? `
+                    <div class="fade-in">
+                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Return/Raising/ Side Patti Height</label>
+                        <select onchange="updateChannelSelection('height', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Select Height...</option>
+                            <option value="3" ${state.selections.height === '3' ? 'selected' : ''}>3 inch</option>
+                            <option value="4" ${state.selections.height === '4' ? 'selected' : ''}>4 inch</option>
+                            <option value="5" ${state.selections.height === '5' ? 'selected' : ''}>5 inch</option>
+                        </select>
+                    </div>
+                    ` : ''}
+
+                    ${state.selections.height && thicknesses.length > 0 ? `
+                    <div class="fade-in">
+                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Acrylic Thickness</label>
+                        <select onchange="updateChannelSelection('thickness', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Select Thickness...</option>
+                            ${thicknesses.map(t => `<option value="${t}" ${state.selections.thickness === t ? 'selected' : ''}>${t}</option>`).join('')}
+                        </select>
+                    </div>
+                    ` : ''}
+
+                    ${(state.selections.thickness || thicknesses.length === 0) && state.selections.height && backAlums.length > 0 ? `
+                    <div class="fade-in">
+                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Back Aluminum</label>
+                        <select onchange="updateChannelSelection('backAluminum', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Select Back Aluminum...</option>
+                            ${backAlums.map(b => `<option value="${b}" ${state.selections.backAluminum === b ? 'selected' : ''}>${b}</option>`).join('')}
+                        </select>
+                    </div>
+                    ` : ''}
+
+                    ${state.selections.letterSize > 90 && (state.selections.backAluminum || backAlums.length === 0) && (state.selections.thickness || thicknesses.length === 0) && state.selections.height && trimCaps.length > 0 ? `
+                    <div class="fade-in">
+                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Trim Cap</label>
+                        <select onchange="updateChannelSelection('trimCap', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Select Trim Cap...</option>
+                            ${trimCaps.map(t => `<option value="${t}" ${state.selections.trimCap === t ? 'selected' : ''}>${t}</option>`).join('')}
+                        </select>
+                    </div>
+                    ` : ''}
+
+                    <button onclick="calculateChannel()" ${!isComplete ? 'disabled' : ''} class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors mt-6 shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed">
+                        Calculate
+                    </button>
+                </div>
+            `);
+        }
+
+        function updateChannelSelection(key, value) {
+            state.selections[key] = value;
+            // Reset dependent selections
+            const keys = ['color', 'height', 'thickness', 'backAluminum', 'trimCap'];
+            const idx = keys.indexOf(key);
+            for (let i = idx + 1; i < keys.length; i++) {
+                delete state.selections[keys[i]];
+            }
+            renderChannelStep2();
+        }
+
+        function calculateChannel() {
+            const { sizeBand, color, height, thickness, backAluminum, trimCap, letterSize, quantity } = state.selections;
+            
+            const enteredHeight = parseFloat(height);
+            // Rule: below 3 inches use pricing for 3 inch return
+            const effectiveHeightVal = Math.max(3, enteredHeight);
+            
+            // Find the closest available height in the sheet for this color/band
+            const filtered = state.data.channel.filter(d => d.sizeBand === sizeBand && d.color === color);
+            const availableHeights = [...new Set(filtered.map(d => parseFloat(d.height)))].filter(h => !isNaN(h)).sort((a,b) => a - b);
+            
+            // Find the height in the sheet that matches effectiveHeightVal
+            // If exact match not found, we'll try to find the closest one (usually rounding up)
+            let targetHeightStr = effectiveHeightVal.toString();
+            if (!availableHeights.includes(effectiveHeightVal)) {
+                // Find the first height >= effectiveHeightVal
+                const higher = availableHeights.find(h => h >= effectiveHeightVal);
+                if (higher) targetHeightStr = higher.toString();
+                else if (availableHeights.length > 0) targetHeightStr = availableHeights[availableHeights.length - 1].toString();
+            }
+
+            const match = state.data.channel.find(d => 
+                d.sizeBand === sizeBand &&
+                d.color === color &&
+                parseFloat(d.height) === parseFloat(targetHeightStr) &&
+                (!thickness || d.thickness === thickness) &&
+                (backAluminum === 'None' ? !d.backAluminum : (!backAluminum || d.backAluminum === backAluminum)) &&
+                (letterSize <= 90 ? true : (trimCap === 'None' ? !d.trimCap : (!trimCap || d.trimCap === trimCap)))
+            );
+
+            if (!match) {
+                renderError("This combination is not available for the specified height.");
+                return;
+            }
+
+            const rate = parseFloat(match.price.replace('/inch', '').trim());
+            const perLetter = rate * letterSize;
+            state.result = {
+                rate,
+                perLetter,
+                total: perLetter * quantity
+            };
+
+            renderResult();
+        }
+
+        // --- COMMON RESULT PAGE ---
+
+        function renderResult() {
+            state.step = 4;
+            const isPrinting = state.mode === 'printing';
+            
+            render(`
+                <div class="py-4 fade-in max-w-3xl mx-auto">
+                    <!-- Main Price Card -->
+                    <div class="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-2xl mb-8">
+                        <div class="bg-slate-900 p-10 text-center relative overflow-hidden">
+                            <!-- Background Pattern -->
+                            <div class="absolute inset-0 opacity-10 pointer-events-none">
+                                <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                                    <defs>
+                                        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                                            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" stroke-width="1"/>
+                                        </pattern>
+                                    </defs>
+                                    <rect width="100%" height="100%" fill="url(#grid)" />
+                                </svg>
+                            </div>
+                            
+                            <span class="relative z-10 text-blue-400 font-bold uppercase tracking-[0.2em] text-[10px]">Investment Proposal</span>
+                            <div class="relative z-10 text-6xl font-black text-white mt-4 tracking-tighter">₹${state.result.total.toLocaleString('en-IN')}</div>
+                            <div class="relative z-10 inline-flex items-center mt-6 px-4 py-1.5 bg-white/10 rounded-full text-white/90 text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border border-white/10">
+                                <span class="w-2 h-2 bg-emerald-400 rounded-full mr-2 animate-pulse"></span>
+                                Estimated Project Total
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 bg-slate-50/50">
+                            <div class="p-8 text-center border-r border-slate-100">
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Unit Pricing</span>
+                                <div class="text-2xl font-bold text-slate-800 mt-2">₹${state.result.rate}${isPrinting ? '/' + state.selections.unit : '/inch'}</div>
+                                <p class="text-[10px] text-slate-400 mt-1 font-medium italic">Standard Industry Rate</p>
+                            </div>
+                            <div class="p-8 text-center">
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${isPrinting ? 'Total Area' : 'Letter Unit'}</span>
+                                <div class="text-2xl font-bold text-slate-800 mt-2">
+                                    ${isPrinting ? state.selections.size.toFixed(2) + ' ' + state.selections.unit : '₹' + state.result.perLetter.toLocaleString('en-IN')}
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-1 font-medium italic">${isPrinting ? 'Calculated from dimensions' : 'Average per character'}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-8">
+                        <!-- Configuration Summary -->
+                        <div class="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+                            <div class="flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
+                                <h4 class="text-xs font-black text-slate-900 uppercase tracking-widest">Technical Specifications</h4>
+                                <span class="px-2.5 py-1 bg-blue-50 text-blue-600 text-[9px] font-black rounded-md uppercase tracking-tighter border border-blue-100">${isPrinting ? 'Printing' : 'Channel Letters'}</span>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-6">
+                                ${isPrinting ? `
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Product Line</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.product}</span>
+                                    </div>
+                                    ${state.selections.printType ? `
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Print Technology</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.printType}</span>
+                                    </div>
+                                    ` : ''}
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Dimensions</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.width}' × ${state.selections.height}'</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Coverage</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.size.toFixed(2)} ${state.selections.unit}</span>
+                                    </div>
+                                ` : `
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Material Color</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.color}</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Return Height</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.height} inches</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Acrylic Grade</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.thickness}</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Letter Height</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.letterSize} inches</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quantity</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.quantity} Units</span>
+                                    </div>
+                                    ${state.selections.letterSize > 90 ? `
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Trim Cap</span>
+                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.trimCap}</span>
+                                    </div>
+                                    ` : ''}
+                                `}
+                            </div>
+                            
+                            <div class="mt-8 pt-6 border-t border-slate-100">
+                                <p class="text-[10px] text-slate-400 leading-relaxed italic">
+                                    * Final pricing subject to site survey and artwork complexity. All materials used are of premium grade.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <button onclick="downloadProposal()" class="flex-2 py-5 bg-blue-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 flex items-center justify-center group">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-3 group-hover:translate-y-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download Estimate
+                        </button>
+                        <button onclick="renderHome()" class="flex-1 py-5 bg-white border border-slate-200 text-slate-600 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-slate-50 transition-colors shadow-sm">
+                            New Estimate
+                        </button>
+                    </div>
+                </div>
+            `);
+        }
+
+        // PDF Generation
+        function downloadProposal() {
+            const doc = new jsPDF();
+            const isPrinting = state.mode === 'printing';
+            const date = new Date().toLocaleDateString();
+
+            // Header - Dark Theme
+            doc.setFillColor(15, 23, 42); // slate-900
+            doc.rect(0, 0, 210, 50, 'F');
+            
+            doc.setFontSize(28);
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Signage.agency', 20, 32);
+            
+            doc.setFontSize(10);
+            doc.setTextColor(148, 163, 184); // slate-400
+            doc.setFont('helvetica', 'normal');
+            doc.text('OFFICIAL PROJECT ESTIMATE', 145, 25);
+            doc.text(`REF: SA-${Math.floor(Math.random() * 900000) + 100000}`, 145, 32);
+            doc.text(`DATE: ${date}`, 145, 39);
+
+            // Client/Project Title
+            doc.setTextColor(15, 23, 42);
+            doc.setFontSize(18);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`${isPrinting ? 'Custom Printing Estimate' : 'Channel Letter Signage Estimate'}`, 20, 70);
+            
+            doc.setDrawColor(37, 99, 235); // blue-600
+            doc.setLineWidth(1);
+            doc.line(20, 75, 40, 75);
+
+            // Scope of Work
+            doc.setFontSize(12);
+            doc.setTextColor(15, 23, 42);
+            doc.text('Scope of Work', 20, 90);
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(71, 85, 105);
+            const scopeText = isPrinting ? 
+                `Supply and fabrication of custom ${state.selections.product} using ${state.selections.printType || 'standard'} printing technology. Dimensions specified as ${state.selections.width}' x ${state.selections.height}'.` :
+                `Fabrication of premium channel letters with ${state.selections.color} aluminum returns, ${state.selections.thickness} acrylic face, and ${state.selections.backAluminum} backing. Total quantity: ${state.selections.quantity} units.`;
+            doc.text(doc.splitTextToSize(scopeText, 170), 20, 97);
+
+            // Technical Specifications Table
+            doc.setFillColor(248, 250, 252); // slate-50
+            doc.rect(20, 115, 170, 10, 'F');
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(100, 116, 139);
+            doc.text('SPECIFICATION PARAMETER', 25, 121.5);
+            doc.text('VALUE / DESCRIPTION', 100, 121.5);
+
+            let y = 133;
+            const addDetail = (label, value) => {
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(100, 116, 139);
+                doc.text(label.toUpperCase(), 25, y);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(15, 23, 42);
+                doc.text(String(value), 100, y);
+                y += 8;
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.2);
+                doc.line(20, y-2, 190, y-2);
+                y += 4;
+            };
+
+            if (isPrinting) {
+                addDetail('Product Line', state.selections.product);
+                if (state.selections.printType) addDetail('Print Technology', state.selections.printType);
+                addDetail('Dimensions', `${state.selections.width}' × ${state.selections.height}'`);
+                addDetail('Total Area', `${state.selections.size.toFixed(2)} ${state.selections.unit}`);
+                addDetail('Unit Rate', `₹${state.result.rate}/${state.selections.unit}`);
+            } else {
+                addDetail('Material Color', state.selections.color);
+                addDetail('Return Height', `${state.selections.height} inches`);
+                addDetail('Acrylic Grade', state.selections.thickness);
+                addDetail('Backing Material', state.selections.backAluminum);
+                if (state.selections.letterSize > 90) addDetail('Trim Cap', state.selections.trimCap);
+                addDetail('Character Height', `${state.selections.letterSize} inches`);
+                addDetail('Total Quantity', `${state.selections.quantity} Units`);
+                addDetail('Rate per Unit', `₹${state.result.perLetter.toLocaleString('en-IN')}`);
+            }
+
+            // Summary Section
+            y += 10;
+            doc.setFillColor(15, 23, 42);
+            doc.rect(110, y, 80, 40, 'F');
+            
+            doc.setTextColor(148, 163, 184);
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'bold');
+            doc.text('TOTAL ESTIMATED INVESTMENT', 120, y + 15);
+            
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.text(`₹${state.result.total.toLocaleString('en-IN')}`, 120, y + 30);
+
+            // Terms & Conditions
+            y = 215;
+            doc.setFontSize(10);
+            doc.setTextColor(15, 23, 42);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Terms & Conditions', 20, y);
+            
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 116, 139);
+            const terms = [
+                '1. This estimate is based on the specifications provided and is subject to site survey.',
+                '2. Payment Terms: 50% advance for project initiation, 50% upon completion.',
+                '3. Taxes, transportation, and installation charges are extra as per actuals.',
+                '4. This proposal is valid for a period of 15 days from the date of issue.'
+            ];
+            terms.forEach((term, i) => {
+                doc.text(term, 20, y + 7 + (i * 5));
+            });
+
+            // Acceptance Signature
+            y = 255;
+            doc.setDrawColor(203, 213, 225);
+            doc.line(20, y + 15, 80, y + 15);
+            doc.line(130, y + 15, 190, y + 15);
+            
+            doc.setFontSize(8);
+            doc.text('Authorized Signatory', 20, y + 22);
+            doc.text('Client Acceptance', 130, y + 22);
+
+            doc.save(`Estimate_${isPrinting ? 'PRINT' : 'SIGN'}_${date.replace(/\//g, '-')}.pdf`);
+        }
+
+        // Start the app
+        init();
+    </script>
+</body>
+</html>

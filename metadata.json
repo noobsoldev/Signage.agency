@@ -1,0 +1,5 @@
+{
+  "name": "Signage.agency",
+  "description": "Signage price estimation tool with live Google Sheets integration and PDF proposal generation.",
+  "requestFramePermissions": []
+}
