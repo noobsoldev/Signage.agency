@@ -562,17 +562,8 @@
             const pObj = state.data.printing.find(p => p.product === state.selections.product);
             
             // Products that specifically use sq inch as per user request
-            const sqInchProducts = [
-                'ss plate 202',
-                'ss plate 304',
-                'golden ss plate',
-                'studs',
-                'glow sign board tubelight',
-                'glow sign board led'
-            ];
-            
             const currentProduct = state.selections.product.toLowerCase().trim();
-            const unit = sqInchProducts.some(p => currentProduct.includes(p)) ? 'sqinch' : (pObj.rateSqinch && !pObj.rateSqft.length ? 'sqinch' : 'sqft');
+            const unit = pObj.rateSqinch ? 'sqinch' : 'sqft';
             state.selections.unit = unit;
 
             render(`
@@ -711,7 +702,7 @@
                                 ` : ''}
                                 <div class="flex flex-col">
                                     <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Dimensions</span>
-                                    <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.width}' × ${state.selections.height}'</span>
+                                    <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.width}${state.selections.unit === 'sqft' ? "'" : '"'} × ${state.selections.height}${state.selections.unit === 'sqft' ? "'" : '"'}</span>
                                 </div>
                                 <div class="flex flex-col">
                                     <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Coverage</span>
@@ -782,7 +773,7 @@
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(71, 85, 105);
-            const scopeText = `Supply and fabrication of custom ${state.selections.product} using ${state.selections.printType || 'standard'} printing technology. Dimensions specified as ${state.selections.width}' x ${state.selections.height}'.`;
+            const scopeText = `Supply and fabrication of custom ${state.selections.product} using ${state.selections.printType || 'standard'} printing technology. Dimensions specified as ${state.selections.width}${state.selections.unit === 'sqft' ? "'" : '"'} x ${state.selections.height}${state.selections.unit === 'sqft' ? "'" : '"'}.`;
             doc.text(doc.splitTextToSize(scopeText, 170), 20, 97);
 
             // Technical Specifications Table
@@ -811,7 +802,7 @@
 
             addDetail('Product Line', state.selections.product);
             if (state.selections.printType) addDetail('Print Technology', state.selections.printType);
-            addDetail('Dimensions', `${state.selections.width}' × ${state.selections.height}'`);
+            addDetail('Dimensions', `${state.selections.width}${state.selections.unit === 'sqft' ? "'" : '"'} × ${state.selections.height}${state.selections.unit === 'sqft' ? "'" : '"'}`);
             addDetail('Total Area', `${state.selections.size.toFixed(2)} ${state.selections.unit}`);
             addDetail('Unit Rate', `₹${state.result.rate}/${state.selections.unit}`);
 
