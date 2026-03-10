@@ -219,13 +219,45 @@
 
         // CSV Fetching
         async function fetchCSV(url) {
-            // Add cache busting
             const cacheBuster = `&t=${Date.now()}`;
-            const proxyUrl = `/api/proxy?url=${encodeURIComponent(url + cacheBuster)}`;
-            const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error('Network response was not ok');
-            const text = await response.text();
-            return parseCSV(text);
+            const fullUrl = url + cacheBuster;
+            
+            // 1. Try Node.js Proxy (for local dev/Node hosting)
+            try {
+                const nodeProxyUrl = `/api/proxy?url=${encodeURIComponent(fullUrl)}`;
+                const response = await fetch(nodeProxyUrl);
+                if (response.ok) {
+                    const text = await response.text();
+                    if (text && text.length > 10) return parseCSV(text);
+                }
+            } catch (e) {
+                console.log("Node proxy not available, trying PHP...");
+            }
+
+            // 2. Try PHP Proxy (for Hostinger/Shared hosting)
+            try {
+                const phpProxyUrl = `proxy.php?url=${encodeURIComponent(fullUrl)}`;
+                const response = await fetch(phpProxyUrl);
+                if (response.ok) {
+                    const text = await response.text();
+                    if (text && text.length > 10) return parseCSV(text);
+                }
+            } catch (e) {
+                console.log("PHP proxy not available, trying direct fetch...");
+            }
+
+            // 3. Try Direct Fetch (Fallback - might fail due to CORS)
+            try {
+                const response = await fetch(fullUrl);
+                if (response.ok) {
+                    const text = await response.text();
+                    return parseCSV(text);
+                }
+            } catch (e) {
+                console.error("All fetch methods failed", e);
+            }
+
+            throw new Error('Unable to load data from any source');
         }
 
         function parseCSV(text) {
