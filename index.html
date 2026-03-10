@@ -129,16 +129,14 @@
         const { jsPDF } = window.jspdf;
 
         // Configuration
-        const SHEET1_URL = 'https://docs.google.com/spreadsheets/d/14q8IyY1DcUaRINaBBj8_jckql3qB5Cf_ADFugMBtgXI/gviz/tq?tqx=out:csv&sheet=Price%20List';
-        const SHEET2_URL = 'https://docs.google.com/spreadsheets/d/1q0grb-AKIcdz8mTz0lwW6NnCGMKvYB40KLeCV0vybhg/gviz/tq?tqx=out:csv';
+        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1LkQe5VsUnYLWqpxyFXG8Up0KifUeR-fxrHJS5CmsmQ4/gviz/tq?tqx=out:csv&gid=0';
 
         // State
         let state = {
-            mode: 'home', // 'home', 'printing', 'channel'
+            mode: 'landing',
             step: 1,
             data: {
-                printing: [],
-                channel: []
+                printing: []
             },
             selections: {},
             result: null
@@ -157,14 +155,8 @@
 
         async function init() {
             try {
-                const [pData, cData] = await Promise.all([
-                    fetchCSV(SHEET1_URL),
-                    fetchCSV(SHEET2_URL)
-                ]);
-
+                const pData = await fetchCSV(SHEET_URL);
                 state.data.printing = parsePrintingData(pData);
-                state.data.channel = parseChannelData(cData);
-
                 renderLanding();
             } catch (error) {
                 console.error(error);
@@ -197,7 +189,7 @@
                             <div>
                                 <h3 class="text-xl font-bold text-slate-900 mb-2">Signage Price Calculator</h3>
                                 <p class="text-slate-600 leading-relaxed">
-                                    Get instant, accurate estimates for custom printing and channel letter signage. Our tool uses real-time pricing data to provide professional quotes in seconds.
+                                    Get instant, accurate estimates for custom printing and signage. Our tool uses real-time pricing data to provide professional quotes in seconds.
                                 </p>
                             </div>
                         </div>
@@ -272,70 +264,24 @@
 
         // Data Parsing
         function parsePrintingData(rows) {
-            // Skip header
+            // Skip header (first row)
+            // The new sheet has 2 empty columns at the start
             return rows.slice(1).map(row => {
-                const rates = row[5] ? row[5].split('/').map(r => parseFloat(r.trim())) : [];
+                // Adjusting indices for the new sheet structure (shifted by 2)
+                const product = (row[2] || '').trim();
+                const ratesStr = row[8] || '';
+                const rates = ratesStr.split('/').map(r => parseFloat(r.trim())).filter(r => !isNaN(r));
+                
                 return {
-                    product: row[0],
-                    solvent: row[1] === 'YES',
-                    ecoSolvent: row[2] === 'YES',
-                    latex: row[3] === 'YES',
-                    uv: row[4] === 'YES',
+                    product: product,
+                    solvent: (row[3] || '').toUpperCase().includes('YES'),
+                    ecoSolvent: (row[4] || '').toUpperCase().includes('YES'),
+                    latex: (row[5] || '').toUpperCase().includes('YES'),
+                    uv: (row[6] || '').toUpperCase().includes('YES'),
                     rateSqft: rates,
-                    rateSqinch: row[6] ? parseFloat(row[6]) : null
+                    rateSqinch: row[9] ? parseFloat(row[9]) : null
                 };
-            }).filter(p => p.product);
-        }
-
-        function parseChannelData(rows) {
-            const data = [];
-            let lastValues = {
-                sNo: '',
-                sizeBand: '',
-                color: '',
-                height: '',
-                thickness: '',
-                backAluminum: '',
-                trimCap: ''
-            };
-
-            // Skip header
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (!row || row.length < 8) continue;
-
-                // Forward-fill logic for merged cells
-                const item = {
-                    sNo: row[0] || lastValues.sNo,
-                    sizeBand: row[1] || lastValues.sizeBand,
-                    color: row[2] || lastValues.color,
-                    height: row[3] || lastValues.height,
-                    thickness: row[4] || lastValues.thickness,
-                    backAluminum: row[5] || lastValues.backAluminum,
-                    trimCap: row[6] || lastValues.trimCap,
-                    price: row[7]
-                };
-
-                // Update last values
-                if (row[0]) lastValues.sNo = row[0];
-                if (row[1]) lastValues.sizeBand = row[1];
-                if (row[2]) lastValues.color = row[2];
-                if (row[3]) lastValues.height = row[3];
-                if (row[4]) lastValues.thickness = row[4];
-                if (row[5]) lastValues.backAluminum = row[5];
-                if (row[6]) lastValues.trimCap = row[6];
-
-                if (item.price) {
-                    // Clean up price and other fields
-                    item.price = item.price.toString().trim();
-                    item.color = item.color.toString().trim();
-                    // Handle common typos in sheet
-                    if (item.color === 'Brushe Silver') item.color = 'Brushed Silver';
-                    
-                    data.push(item);
-                }
-            }
-            return data;
+            }).filter(p => p.product && p.product !== 'PRODUCT');
         }
 
         // Rendering Logic
@@ -374,60 +320,24 @@
         }
 
         function renderHome() {
-            state.mode = 'home';
-            state.step = 1;
-            state.selections = {};
-            state.result = null;
-
-            render(`
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
-                    <div onclick="startFlow('printing')" class="group cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-8 hover:border-blue-500 hover:bg-blue-50 transition-all duration-300">
-                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                            </svg>
-                        </div>
-                        <h3 class="text-xl font-bold text-slate-900 mb-2">Printing</h3>
-                        <p class="text-slate-500 text-sm leading-relaxed">Flex, Vinyl, Acrylic, Sunboard, and more with various print types.</p>
-                    </div>
-                    <div onclick="startFlow('channel')" class="group cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-8 hover:border-blue-500 hover:bg-blue-50 transition-all duration-300">
-                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
-                            </svg>
-                        </div>
-                        <h3 class="text-xl font-bold text-slate-900 mb-2">Channel Letters</h3>
-                        <p class="text-slate-500 text-sm leading-relaxed">Custom aluminum letters with acrylic faces and various specifications.</p>
-                    </div>
-                </div>
-            `);
+            renderPrintingStep1();
         }
 
         // Flow Management
         function startFlow(mode) {
             state.mode = mode;
             state.step = 1;
-            if (mode === 'printing') {
-                renderPrintingStep1();
-            } else {
-                renderChannelStep1();
-            }
+            renderPrintingStep1();
         }
 
         function goBack() {
             if (state.step === 1) {
-                renderHome();
+                renderLanding();
             } else {
                 state.step--;
-                if (state.mode === 'printing') {
-                    if (state.step === 1) renderPrintingStep1();
-                    else if (state.step === 2) renderPrintingStep2();
-                    else if (state.step === 3) renderPrintingStep3();
-                } else {
-                    if (state.step === 1) renderChannelStep1();
-                    else if (state.step === 2) renderChannelStep1b();
-                    else if (state.step === 3) renderChannelStep2();
-                }
+                if (state.step === 1) renderPrintingStep1();
+                else if (state.step === 2) renderPrintingStep2();
+                else if (state.step === 3) renderPrintingStep3();
             }
         }
 
@@ -436,28 +346,129 @@
         function renderPrintingStep1() {
             state.step = 1;
             const products = state.data.printing.map(p => p.product);
+            const selectedProduct = state.selections.product || '';
             
             render(`
                 ${renderStepHeader(1, 4)}
                 <h2 class="text-2xl font-bold text-slate-900 mb-6">Select Product</h2>
                 <div class="space-y-4">
-                    <select id="product-select" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all">
-                        <option value="">Choose a product...</option>
-                        ${products.map(p => `<option value="${p}" ${state.selections.product === p ? 'selected' : ''}>${p}</option>`).join('')}
-                    </select>
-                    <button onclick="nextPrintingStep1()" class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
+                    <div class="relative">
+                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Product Name</label>
+                        <div class="relative">
+                            <input 
+                                type="text" 
+                                id="product-search" 
+                                placeholder="Type to search product..." 
+                                value="${selectedProduct}"
+                                oninput="filterProducts(this.value)"
+                                onfocus="showProductDropdown()"
+                                autocomplete="off"
+                                class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-20"
+                            >
+                            <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+                                ${selectedProduct ? `
+                                    <button onclick="clearProductSearch()" class="p-1 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                ` : ''}
+                                <div class="text-slate-400 pointer-events-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="product-dropdown" class="hidden absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto fade-in">
+                            ${products.map(p => `
+                                <div onclick="selectProduct('${p.replace(/'/g, "\\'")}')" class="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 product-option">
+                                    <span class="text-slate-700">${p}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <button id="next-btn" onclick="nextPrintingStep1()" class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed" ${!selectedProduct ? 'disabled' : ''}>
                         Next
                     </button>
                 </div>
             `);
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                const pDropdown = document.getElementById('product-dropdown');
+                const pSearchInput = document.getElementById('product-search');
+                if (pDropdown && pSearchInput && !pDropdown.contains(e.target) && e.target !== pSearchInput) {
+                    pDropdown.classList.add('hidden');
+                }
+
+                const cDropdown = document.getElementById('color-dropdown');
+                const cSearchInput = document.getElementById('color-search');
+                if (cDropdown && cSearchInput && !cDropdown.contains(e.target) && e.target !== cSearchInput) {
+                    cDropdown.classList.add('hidden');
+                }
+            });
+        }
+
+        function clearProductSearch() {
+            state.selections.product = '';
+            renderPrintingStep1();
+        }
+
+        function showProductDropdown() {
+            const dropdown = document.getElementById('product-dropdown');
+            if (dropdown) dropdown.classList.remove('hidden');
+        }
+
+        function filterProducts(val) {
+            const dropdown = document.getElementById('product-dropdown');
+            const options = dropdown.querySelectorAll('.product-option');
+            const nextBtn = document.getElementById('next-btn');
+            let hasVisible = false;
+
+            val = val.toLowerCase();
+            options.forEach(opt => {
+                const text = opt.textContent.toLowerCase();
+                if (text.includes(val)) {
+                    opt.classList.remove('hidden');
+                    hasVisible = true;
+                } else {
+                    opt.classList.add('hidden');
+                }
+            });
+
+            dropdown.classList.toggle('hidden', !hasVisible);
+            
+            // If the value matches exactly one product, we can enable the button
+            const exactMatch = state.data.printing.find(p => p.product.toLowerCase() === val);
+            if (exactMatch) {
+                state.selections.product = exactMatch.product;
+                nextBtn.disabled = false;
+            } else {
+                nextBtn.disabled = true;
+            }
+        }
+
+        function selectProduct(p) {
+            state.selections.product = p;
+            const searchInput = document.getElementById('product-search');
+            const dropdown = document.getElementById('product-dropdown');
+            const nextBtn = document.getElementById('next-btn');
+            
+            if (searchInput) searchInput.value = p;
+            if (dropdown) dropdown.classList.add('hidden');
+            if (nextBtn) nextBtn.disabled = false;
         }
 
         function nextPrintingStep1() {
-            const product = document.getElementById('product-select').value;
+            const product = state.selections.product;
             if (!product) return;
-            state.selections.product = product;
             
             const pObj = state.data.printing.find(p => p.product === product);
+            if (!pObj) return;
+
             const availableTypes = [];
             if (pObj.solvent) availableTypes.push('Solvent');
             if (pObj.ecoSolvent) availableTypes.push('Eco Solvent');
@@ -632,245 +643,11 @@
             renderResult();
         }
 
-        // --- CHANNEL LETTERS FLOW ---
-
-        function renderChannelStep1() {
-            state.step = 1;
-            render(`
-                ${renderStepHeader(1, 4)}
-                <h2 class="text-2xl font-bold text-slate-900 mb-6">Number of Letters</h2>
-                <div class="space-y-4">
-                    <div class="relative">
-                        <input type="number" id="letter-qty-input" value="${state.selections.quantity || ''}" placeholder="1" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-2xl font-bold text-slate-800 transition-all">
-                        <div class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium uppercase tracking-wider">Qty</div>
-                    </div>
-                    <p class="text-sm text-slate-500">Enter the total number of letters.</p>
-                    <button onclick="nextChannelStep1()" class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
-                        Next
-                    </button>
-                </div>
-            `);
-        }
-
-        function nextChannelStep1() {
-            const qty = parseInt(document.getElementById('letter-qty-input').value);
-            if (!qty || qty <= 0) return;
-            state.selections.quantity = qty;
-            renderChannelStep1b();
-        }
-
-        function renderChannelStep1b() {
-            state.step = 2;
-            render(`
-                ${renderStepHeader(2, 4)}
-                <h2 class="text-2xl font-bold text-slate-900 mb-6">Enter Letter Size</h2>
-                <div class="space-y-4">
-                    <div class="relative">
-                        <input type="number" id="letter-size-input" value="${state.selections.letterSize || ''}" placeholder="0" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-2xl font-bold text-slate-800 transition-all">
-                        <div class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium uppercase tracking-wider">Inches</div>
-                    </div>
-                    <p class="text-sm text-slate-500">Enter the height of the letters in inches. <br><span class="text-blue-600 font-semibold">Min size required is 12 inches.</span></p>
-                    <button onclick="nextChannelStep1b()" class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
-                        Next
-                    </button>
-                </div>
-            `);
-        }
-
-        function nextChannelStep1b() {
-            const size = parseFloat(document.getElementById('letter-size-input').value);
-            if (!size || size < 12) {
-                const input = document.getElementById('letter-size-input');
-                input.classList.add('border-red-500');
-                return;
-            }
-            state.selections.letterSize = size;
-
-            // Map to size band
-            const band = findSizeBand(size);
-            if (!band) {
-                renderError("Size is outside the supported range.");
-                return;
-            }
-            state.selections.sizeBand = band;
-            renderChannelStep2();
-        }
-
-        function findSizeBand(size) {
-            const bands = [...new Set(state.data.channel.map(d => d.sizeBand))];
-            
-            for (const band of bands) {
-                if (band.includes('above')) {
-                    const min = parseInt(band);
-                    if (size >= min) return band;
-                } else {
-                    const parts = band.match(/\d+/g);
-                    if (parts && parts.length === 2) {
-                        const min = parseInt(parts[0]);
-                        const max = parseInt(parts[1]);
-                        if (size >= min && size <= max) return band;
-                    }
-                }
-            }
-            return null;
-        }
-
-        function renderChannelStep2() {
-            state.step = 3;
-            
-            // Filter data by current selections to get available options for next dropdowns
-            let filtered = state.data.channel.filter(d => d.sizeBand === state.selections.sizeBand);
-            
-            // 1. Color
-            const colors = [...new Set(filtered.map(d => d.color))].filter(Boolean);
-            
-            // 2. Height (Manual Input now, but we still need to know available heights for matching later)
-            // We'll just use the manual input value from state.selections.height
-            
-            // 3. Thickness
-            // Since height is manual, we can't easily filter thicknesses by height until a height is entered.
-            // However, to keep the flow smooth, we might want to show all thicknesses available for the color.
-            const filteredByColor = state.selections.color ? filtered.filter(d => d.color === state.selections.color) : filtered;
-            const thicknesses = [...new Set(filteredByColor.map(d => d.thickness))].filter(Boolean);
-            
-            // 4. Back Aluminum
-            const filteredByThickness = state.selections.thickness ? filteredByColor.filter(d => d.thickness === state.selections.thickness) : filteredByColor;
-            const backAlums = [...new Set(filteredByThickness.map(d => d.backAluminum || 'None'))].filter(Boolean);
-            
-            // 5. Trim Cap
-            const filteredByBack = state.selections.backAluminum !== undefined ? 
-                filteredByThickness.filter(d => (state.selections.backAluminum === 'None' ? !d.backAluminum : d.backAluminum === state.selections.backAluminum)) : filteredByThickness;
-            const trimCaps = [...new Set(filteredByBack.map(d => d.trimCap || 'None'))].filter(Boolean);
-
-            const isComplete = state.selections.color && state.selections.height && 
-                             (thicknesses.length === 0 || state.selections.thickness) && 
-                             (backAlums.length === 0 || state.selections.backAluminum) && 
-                             (state.selections.letterSize <= 90 || trimCaps.length === 0 || state.selections.trimCap);
-
-            render(`
-                ${renderStepHeader(3, 4)}
-                <h2 class="text-2xl font-bold text-slate-900 mb-6">Select Specifications</h2>
-                
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Color of Aluminum</label>
-                        <select onchange="updateChannelSelection('color', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select Color...</option>
-                            ${colors.map(c => `<option value="${c}" ${state.selections.color === c ? 'selected' : ''}>${c}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    ${state.selections.color ? `
-                    <div class="fade-in">
-                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Return/Raising/ Side Patti Height</label>
-                        <select onchange="updateChannelSelection('height', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select Height...</option>
-                            <option value="3" ${state.selections.height === '3' ? 'selected' : ''}>3 inch</option>
-                            <option value="4" ${state.selections.height === '4' ? 'selected' : ''}>4 inch</option>
-                            <option value="5" ${state.selections.height === '5' ? 'selected' : ''}>5 inch</option>
-                        </select>
-                    </div>
-                    ` : ''}
-
-                    ${state.selections.height && thicknesses.length > 0 ? `
-                    <div class="fade-in">
-                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Acrylic Thickness</label>
-                        <select onchange="updateChannelSelection('thickness', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select Thickness...</option>
-                            ${thicknesses.map(t => `<option value="${t}" ${state.selections.thickness === t ? 'selected' : ''}>${t}</option>`).join('')}
-                        </select>
-                    </div>
-                    ` : ''}
-
-                    ${(state.selections.thickness || thicknesses.length === 0) && state.selections.height && backAlums.length > 0 ? `
-                    <div class="fade-in">
-                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Back Aluminum</label>
-                        <select onchange="updateChannelSelection('backAluminum', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select Back Aluminum...</option>
-                            ${backAlums.map(b => `<option value="${b}" ${state.selections.backAluminum === b ? 'selected' : ''}>${b}</option>`).join('')}
-                        </select>
-                    </div>
-                    ` : ''}
-
-                    ${state.selections.letterSize > 90 && (state.selections.backAluminum || backAlums.length === 0) && (state.selections.thickness || thicknesses.length === 0) && state.selections.height && trimCaps.length > 0 ? `
-                    <div class="fade-in">
-                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Trim Cap</label>
-                        <select onchange="updateChannelSelection('trimCap', this.value)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select Trim Cap...</option>
-                            ${trimCaps.map(t => `<option value="${t}" ${state.selections.trimCap === t ? 'selected' : ''}>${t}</option>`).join('')}
-                        </select>
-                    </div>
-                    ` : ''}
-
-                    <button onclick="calculateChannel()" ${!isComplete ? 'disabled' : ''} class="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors mt-6 shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed">
-                        Calculate
-                    </button>
-                </div>
-            `);
-        }
-
-        function updateChannelSelection(key, value) {
-            state.selections[key] = value;
-            // Reset dependent selections
-            const keys = ['color', 'height', 'thickness', 'backAluminum', 'trimCap'];
-            const idx = keys.indexOf(key);
-            for (let i = idx + 1; i < keys.length; i++) {
-                delete state.selections[keys[i]];
-            }
-            renderChannelStep2();
-        }
-
-        function calculateChannel() {
-            const { sizeBand, color, height, thickness, backAluminum, trimCap, letterSize, quantity } = state.selections;
-            
-            const enteredHeight = parseFloat(height);
-            // Rule: below 3 inches use pricing for 3 inch return
-            const effectiveHeightVal = Math.max(3, enteredHeight);
-            
-            // Find the closest available height in the sheet for this color/band
-            const filtered = state.data.channel.filter(d => d.sizeBand === sizeBand && d.color === color);
-            const availableHeights = [...new Set(filtered.map(d => parseFloat(d.height)))].filter(h => !isNaN(h)).sort((a,b) => a - b);
-            
-            // Find the height in the sheet that matches effectiveHeightVal
-            // If exact match not found, we'll try to find the closest one (usually rounding up)
-            let targetHeightStr = effectiveHeightVal.toString();
-            if (!availableHeights.includes(effectiveHeightVal)) {
-                // Find the first height >= effectiveHeightVal
-                const higher = availableHeights.find(h => h >= effectiveHeightVal);
-                if (higher) targetHeightStr = higher.toString();
-                else if (availableHeights.length > 0) targetHeightStr = availableHeights[availableHeights.length - 1].toString();
-            }
-
-            const match = state.data.channel.find(d => 
-                d.sizeBand === sizeBand &&
-                d.color === color &&
-                parseFloat(d.height) === parseFloat(targetHeightStr) &&
-                (!thickness || d.thickness === thickness) &&
-                (backAluminum === 'None' ? !d.backAluminum : (!backAluminum || d.backAluminum === backAluminum)) &&
-                (letterSize <= 90 ? true : (trimCap === 'None' ? !d.trimCap : (!trimCap || d.trimCap === trimCap)))
-            );
-
-            if (!match) {
-                renderError("This combination is not available for the specified height.");
-                return;
-            }
-
-            const rate = parseFloat(match.price.replace('/inch', '').trim());
-            const perLetter = rate * letterSize;
-            state.result = {
-                rate,
-                perLetter,
-                total: perLetter * quantity
-            };
-
-            renderResult();
-        }
-
         // --- COMMON RESULT PAGE ---
 
         function renderResult() {
             state.step = 4;
-            const isPrinting = state.mode === 'printing';
+            const isPrinting = true; // Only printing now
             
             render(`
                 <div class="py-4 fade-in max-w-3xl mx-auto">
@@ -900,15 +677,15 @@
                         <div class="grid grid-cols-2 bg-slate-50/50">
                             <div class="p-8 text-center border-r border-slate-100">
                                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Unit Pricing</span>
-                                <div class="text-2xl font-bold text-slate-800 mt-2">₹${state.result.rate}${isPrinting ? '/' + state.selections.unit : '/inch'}</div>
+                                <div class="text-2xl font-bold text-slate-800 mt-2">₹${state.result.rate}/${state.selections.unit}</div>
                                 <p class="text-[10px] text-slate-400 mt-1 font-medium italic">Standard Industry Rate</p>
                             </div>
                             <div class="p-8 text-center">
-                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${isPrinting ? 'Total Area' : 'Letter Unit'}</span>
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Area</span>
                                 <div class="text-2xl font-bold text-slate-800 mt-2">
-                                    ${isPrinting ? state.selections.size.toFixed(2) + ' ' + state.selections.unit : '₹' + state.result.perLetter.toLocaleString('en-IN')}
+                                    ${state.selections.size.toFixed(2)} ${state.selections.unit}
                                 </div>
-                                <p class="text-[10px] text-slate-400 mt-1 font-medium italic">${isPrinting ? 'Calculated from dimensions' : 'Average per character'}</p>
+                                <p class="text-[10px] text-slate-400 mt-1 font-medium italic">Calculated from dimensions</p>
                             </div>
                         </div>
                     </div>
@@ -918,57 +695,28 @@
                         <div class="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
                             <div class="flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
                                 <h4 class="text-xs font-black text-slate-900 uppercase tracking-widest">Technical Specifications</h4>
-                                <span class="px-2.5 py-1 bg-blue-50 text-blue-600 text-[9px] font-black rounded-md uppercase tracking-tighter border border-blue-100">${isPrinting ? 'Printing' : 'Channel Letters'}</span>
+                                <span class="px-2.5 py-1 bg-blue-50 text-blue-600 text-[9px] font-black rounded-md uppercase tracking-tighter border border-blue-100">Printing</span>
                             </div>
                             
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-6">
-                                ${isPrinting ? `
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Product Line</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.product}</span>
-                                    </div>
-                                    ${state.selections.printType ? `
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Print Technology</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.printType}</span>
-                                    </div>
-                                    ` : ''}
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Dimensions</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.width}' × ${state.selections.height}'</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Coverage</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.size.toFixed(2)} ${state.selections.unit}</span>
-                                    </div>
-                                ` : `
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Material Color</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.color}</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Return Height</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.height} inches</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Acrylic Grade</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.thickness}</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Letter Height</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.letterSize} inches</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quantity</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.quantity} Units</span>
-                                    </div>
-                                    ${state.selections.letterSize > 90 ? `
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Trim Cap</span>
-                                        <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.trimCap}</span>
-                                    </div>
-                                    ` : ''}
-                                `}
+                                <div class="flex flex-col">
+                                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Product Line</span>
+                                    <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.product}</span>
+                                </div>
+                                ${state.selections.printType ? `
+                                <div class="flex flex-col">
+                                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Print Technology</span>
+                                    <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.printType}</span>
+                                </div>
+                                ` : ''}
+                                <div class="flex flex-col">
+                                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Dimensions</span>
+                                    <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.width}' × ${state.selections.height}'</span>
+                                </div>
+                                <div class="flex flex-col">
+                                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Coverage</span>
+                                    <span class="text-slate-800 font-bold text-sm leading-tight">${state.selections.size.toFixed(2)} ${state.selections.unit}</span>
+                                </div>
                             </div>
                             
                             <div class="mt-8 pt-6 border-t border-slate-100">
@@ -1021,7 +769,7 @@
             doc.setTextColor(15, 23, 42);
             doc.setFontSize(18);
             doc.setFont('helvetica', 'bold');
-            doc.text(`${isPrinting ? 'Custom Printing Estimate' : 'Channel Letter Signage Estimate'}`, 20, 70);
+            doc.text('Custom Printing Estimate', 20, 70);
             
             doc.setDrawColor(37, 99, 235); // blue-600
             doc.setLineWidth(1);
@@ -1034,9 +782,7 @@
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(71, 85, 105);
-            const scopeText = isPrinting ? 
-                `Supply and fabrication of custom ${state.selections.product} using ${state.selections.printType || 'standard'} printing technology. Dimensions specified as ${state.selections.width}' x ${state.selections.height}'.` :
-                `Fabrication of premium channel letters with ${state.selections.color} aluminum returns, ${state.selections.thickness} acrylic face, and ${state.selections.backAluminum} backing. Total quantity: ${state.selections.quantity} units.`;
+            const scopeText = `Supply and fabrication of custom ${state.selections.product} using ${state.selections.printType || 'standard'} printing technology. Dimensions specified as ${state.selections.width}' x ${state.selections.height}'.`;
             doc.text(doc.splitTextToSize(scopeText, 170), 20, 97);
 
             // Technical Specifications Table
@@ -1063,22 +809,11 @@
                 y += 4;
             };
 
-            if (isPrinting) {
-                addDetail('Product Line', state.selections.product);
-                if (state.selections.printType) addDetail('Print Technology', state.selections.printType);
-                addDetail('Dimensions', `${state.selections.width}' × ${state.selections.height}'`);
-                addDetail('Total Area', `${state.selections.size.toFixed(2)} ${state.selections.unit}`);
-                addDetail('Unit Rate', `₹${state.result.rate}/${state.selections.unit}`);
-            } else {
-                addDetail('Material Color', state.selections.color);
-                addDetail('Return Height', `${state.selections.height} inches`);
-                addDetail('Acrylic Grade', state.selections.thickness);
-                addDetail('Backing Material', state.selections.backAluminum);
-                if (state.selections.letterSize > 90) addDetail('Trim Cap', state.selections.trimCap);
-                addDetail('Character Height', `${state.selections.letterSize} inches`);
-                addDetail('Total Quantity', `${state.selections.quantity} Units`);
-                addDetail('Rate per Unit', `₹${state.result.perLetter.toLocaleString('en-IN')}`);
-            }
+            addDetail('Product Line', state.selections.product);
+            if (state.selections.printType) addDetail('Print Technology', state.selections.printType);
+            addDetail('Dimensions', `${state.selections.width}' × ${state.selections.height}'`);
+            addDetail('Total Area', `${state.selections.size.toFixed(2)} ${state.selections.unit}`);
+            addDetail('Unit Rate', `₹${state.result.rate}/${state.selections.unit}`);
 
             // Summary Section
             y += 10;
@@ -1124,7 +859,7 @@
             doc.text('Authorized Signatory', 20, y + 22);
             doc.text('Client Acceptance', 130, y + 22);
 
-            doc.save(`Estimate_${isPrinting ? 'PRINT' : 'SIGN'}_${date.replace(/\//g, '-')}.pdf`);
+            doc.save(`Estimate_PRINT_${date.replace(/\//g, '-')}.pdf`);
         }
 
         // Start the app
